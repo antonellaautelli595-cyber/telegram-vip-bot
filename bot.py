@@ -15,6 +15,7 @@ from telegram.ext import (
     ContextTypes,
     CallbackQueryHandler,
     MessageHandler,
+    CommandHandler,
     filters,
 )
 
@@ -33,14 +34,21 @@ def cargar_suscriptores():
     try:
         with open(ARCHIVO_DATOS, "r") as archivo:
             return json.load(archivo)
-
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
 def guardar_suscriptores(suscriptores):
     with open(ARCHIVO_DATOS, "w") as archivo:
         json.dump(suscriptores, archivo, indent=2)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+        "🤖 Bot VIP activo.\n\n"
+        "Yo me encargo de controlar los vencimientos del canal."
+    )
 
 
 async def nuevo_suscriptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -61,81 +69,56 @@ async def nuevo_suscriptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if estado_anterior in ("left", "kicked") and estado_nuevo == "member":
 
-        suscriptores = cargar_suscriptores()
         usuario_id = str(usuario.id)
 
-        # Si el usuario ya está registrado y activo,
-        # no volvemos a crearle una suscripción.
-        if (
-            usuario_id in suscriptores
-            and suscriptores[usuario_id].get("estado") == "activo"
-        ):
-            print(
-                f"USUARIO YA REGISTRADO: {usuario.full_name}"
-            )
-            return
-
         teclado = InlineKeyboardMarkup([
-
             [
                 InlineKeyboardButton(
                     "📅 7 días",
                     callback_data=f"duracion_7_{usuario.id}"
                 ),
-
                 InlineKeyboardButton(
                     "📅 15 días",
                     callback_data=f"duracion_15_{usuario.id}"
                 ),
             ],
-
             [
                 InlineKeyboardButton(
                     "🗓️ 1 mes",
                     callback_data=f"duracion_30_{usuario.id}"
                 ),
-
                 InlineKeyboardButton(
                     "🗓️ 2 meses",
                     callback_data=f"duracion_60_{usuario.id}"
                 ),
             ],
-
             [
                 InlineKeyboardButton(
                     "✍️ Elegir fecha",
                     callback_data=f"fecha_{usuario.id}"
                 )
             ]
-
         ])
 
         nombre_usuario = (
             f"@{usuario.username}"
             if usuario.username
-            else "Sin usuario"
+            else "Sin nombre de usuario"
         )
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-
             text=(
                 "🔔 ¡NUEVO MIEMBRO EN EL VIP!\n\n"
-
                 f"👤 Nombre: {usuario.full_name}\n"
                 f"📱 Usuario: {nombre_usuario}\n"
                 f"🆔 ID: {usuario.id}\n\n"
-
                 "¿Cuánto tiempo tendrá acceso?"
             ),
-
             reply_markup=teclado
         )
 
-        print(
-            f"NUEVO MIEMBRO DETECTADO: "
-            f"{usuario.full_name}"
-        )
+        print(f"NUEVO MIEMBRO DETECTADO: {usuario.full_name}")
 
 
 async def elegir_duracion(
@@ -154,9 +137,7 @@ async def elegir_duracion(
 
     await consulta.answer()
 
-    datos = consulta.data
-
-    partes = datos.split("_")
+    partes = consulta.data.split("_")
 
     if partes[0] == "duracion":
 
@@ -179,24 +160,19 @@ async def elegir_duracion(
         guardar_suscriptores(suscriptores)
 
         await consulta.edit_message_text(
-
             text=(
                 "✅ ACCESO CONFIGURADO\n\n"
-
                 f"⏳ Duración: {dias} días\n"
                 f"📅 Vence: {vencimiento.strftime('%d/%m/%Y')}\n\n"
-
                 "El bot eliminará automáticamente "
                 "a esta persona cuando venza su acceso."
             )
-
         )
 
         print(
             f"SUSCRIPCIÓN CONFIGURADA: "
             f"{usuario_id} | {dias} días"
         )
-
 
     elif partes[0] == "fecha":
 
@@ -206,22 +182,13 @@ async def elegir_duracion(
             "usuario_fecha_personalizada"
         ] = usuario_id
 
-        await context.bot.send_message(
-
-            chat_id=ADMIN_ID,
-
-            text=(
-                "📅 FECHA PERSONALIZADA\n\n"
-
-                "Ahora escribime la fecha de vencimiento "
-                "en este formato:\n\n"
-
-                "DD/MM/AAAA\n\n"
-
-                "Por ejemplo:\n"
-                "15/11/2026"
-            )
-
+        await consulta.edit_message_text(
+            "📅 FECHA PERSONALIZADA\n\n"
+            "Ahora escribime la fecha de vencimiento "
+            "en este formato:\n\n"
+            "DD/MM/AAAA\n\n"
+            "Por ejemplo:\n"
+            "15/11/2026"
         )
 
 
@@ -249,7 +216,6 @@ async def recibir_fecha_personalizada(
             "%d/%m/%Y"
         )
 
-        # La suscripción vencerá al final de ese día
         vencimiento = fecha.replace(
             hour=23,
             minute=59,
@@ -272,31 +238,19 @@ async def recibir_fecha_personalizada(
         ]
 
         await update.message.reply_text(
-
             "✅ FECHA CONFIGURADA\n\n"
-
-            f"📅 Esta persona tendrá acceso "
-            f"hasta el {vencimiento.strftime('%d/%m/%Y')}.\n\n"
-
+            f"📅 Esta persona tendrá acceso hasta "
+            f"el {vencimiento.strftime('%d/%m/%Y')}.\n\n"
             "El bot la eliminará automáticamente "
             "cuando llegue esa fecha."
-        )
-
-        print(
-            f"FECHA PERSONALIZADA CONFIGURADA: "
-            f"{usuario_id} | "
-            f"{vencimiento.strftime('%d/%m/%Y')}"
         )
 
     except ValueError:
 
         await update.message.reply_text(
-
             "❌ No entendí la fecha.\n\n"
-
             "Escribila así:\n"
             "DD/MM/AAAA\n\n"
-
             "Por ejemplo:\n"
             "15/11/2026"
         )
@@ -331,22 +285,18 @@ async def revisar_vencimientos(
                 )
 
                 datos["estado"] = "vencido"
-
                 cambios = True
 
                 print(
-                    f"SUSCRIPCIÓN VENCIDA: "
-                    f"{datos.get('nombre', usuario_id)}"
+                    f"SUSCRIPCIÓN VENCIDA: {usuario_id}"
                 )
 
                 await context.bot.send_message(
                     chat_id=ADMIN_ID,
-
                     text=(
                         "⛔ ACCESO VENCIDO\n\n"
-
                         f"🆔 Usuario: {usuario_id}\n"
-                        f"📅 Su suscripción terminó."
+                        "📅 Su suscripción terminó."
                     )
                 )
 
@@ -369,62 +319,52 @@ async def main():
         .build()
     )
 
+    # Responde al comando /start
+    application.add_handler(
+        CommandHandler("start", start)
+    )
 
     # Detecta cuando alguien entra o sale
     application.add_handler(
-
         ChatMemberHandler(
             nuevo_suscriptor,
             ChatMemberHandler.CHAT_MEMBER
         )
     )
 
-
     # Detecta los botones
     application.add_handler(
         CallbackQueryHandler(elegir_duracion)
     )
 
-
     # Recibe una fecha personalizada
     application.add_handler(
-
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             recibir_fecha_personalizada
         )
     )
 
-
     # Revisa los vencimientos cada hora
     application.job_queue.run_repeating(
-
         revisar_vencimientos,
-
         interval=3600,
-
         first=10
     )
-
 
     print("BOT INICIADO")
     print("ESPERANDO NUEVOS MIEMBROS...")
 
-
     await application.initialize()
-
     await application.start()
 
-
     await application.updater.start_polling(
-
         allowed_updates=[
             "chat_member",
             "callback_query",
             "message"
         ]
     )
-
 
     await asyncio.Event().wait()
 
